@@ -6,6 +6,9 @@ import serial
 import struct
 import sys
 import time
+import binascii
+
+from typing import List, Optional
 
 DEBUG = 1
 CMD_MODE = 2
@@ -26,35 +29,46 @@ ser.flushInput()
 
 byte, data = 0, ""
 
-def dump(d, prefix=''):
-    print(prefix + ' '.join(x.encode("utf-8").hex() for x in d))
 
-def construct_command(cmd, data=[]):
+def dump(d: bytes, prefix: str = '') -> None:
+    print(prefix + d.hex())
+
+
+def construct_command(cmd: int, data: List[int] = []) -> bytes:
     assert len(data) <= 12
-    data += [0,]*(12-len(data))
-    checksum = (sum(data)+cmd-2)%256
+    data += [0, ]*(12-len(data))
+    checksum = (sum(data)+cmd-2) % 256
     ret = "\xaa\xb4" + chr(cmd)
     ret += ''.join(chr(x) for x in data)
     ret += "\xff\xff" + chr(checksum) + "\xab"
 
-    if DEBUG:
-        dump(ret, '> ')
-    return ret
+    out = ret.encode('utf-8')
 
-def process_data(d):
+    if DEBUG:
+        dump(out, '> ')
+    return out
+
+
+def process_data(d: bytes) -> str:
     r = struct.unpack('<HHxxBB', d[2:])
     pm25 = r[0]/10.0
     pm10 = r[1]/10.0
-    checksum = sum(ord(v) for v in d[2:8])%256
-    print("PM 2.5: {} μg/m^3  PM 10: {} μg/m^3 CRC={}".format(pm25, pm10, "OK" if (checksum==r[2] and r[3]==0xab) else "NOK"))
+    checksum = sum(d[2:8]) % 256
+    out = "PM 2.5: {} μg/m^3  PM 10: {} μg/m^3 CRC={}".format(
+        pm25, pm10, "OK" if (checksum == r[2] and r[3] == 0xab) else "NOK")
+    print(out)
+    return out
 
-def process_version(d):
+
+def process_version(d: bytes) -> None:
     r = struct.unpack('<BBBHBB', d[3:])
-    checksum = sum(ord(v) for v in d[2:8])%256
-    print("Y: {}, M: {}, D: {}, ID: {}, CRC={}".format(r[0], r[1], r[2], hex(r[3]), "OK" if (checksum==r[4] and r[5]==0xab) else "NOK"))
+    checksum = sum(d[2:8]) % 256
+    print("Y: {}, M: {}, D: {}, ID: {}, CRC={}".format(r[0], r[1], r[2], hex(
+        r[3]), "OK" if (checksum == r[4] and r[5] == 0xab) else "NOK"))
 
-def read_response():
-    byte = 0
+
+def read_response() -> bytes:
+    byte = b''
     while byte != "\xaa":
         byte = ser.read(size=1)
 
@@ -64,42 +78,51 @@ def read_response():
         dump(d, '< ')
     return byte + d
 
-def cmd_set_mode(mode=MODE_QUERY):
+
+def cmd_set_mode(mode: int = MODE_QUERY) -> None:
     ser.write(construct_command(CMD_MODE, [0x1, mode]))
     read_response()
 
-def cmd_query_data():
+
+def cmd_query_data() -> Optional[str]:
     ser.write(construct_command(CMD_QUERY_DATA))
     d = read_response()
-    if d[1] == "\xc0":
-        process_data(d)
+    out = None
+    if d.index(b"\xc0") == 1:
+        out = process_data(d)
+    return out
 
-def cmd_set_sleep(sleep=1):
+
+def cmd_set_sleep(sleep: int = 1) -> None:
     mode = 0 if sleep else 1
     ser.write(construct_command(CMD_SLEEP, [0x1, mode]))
     read_response()
 
-def cmd_set_working_period(period):
+
+def cmd_set_working_period(period: int) -> None:
     ser.write(construct_command(CMD_WORKING_PERIOD, [0x1, period]))
     read_response()
 
-def cmd_firmware_ver():
+
+def cmd_firmware_ver() -> None:
     ser.write(construct_command(CMD_FIRMWARE))
     d = read_response()
     process_version(d)
 
-def cmd_set_id(id):
-    id_h = (id>>8) % 256
+
+def cmd_set_id(id: int) -> None:
+    id_h = (id >> 8) % 256
     id_l = id % 256
     ser.write(construct_command(CMD_DEVICE_ID, [0]*10+[id_l, id_h]))
     read_response()
 
+
 if __name__ == "__main__":
     cmd_set_sleep(0)
-    cmd_set_mode(1);
+    cmd_set_mode(1)
     cmd_firmware_ver()
     time.sleep(3)
 
-    cmd_query_data();
-    cmd_set_mode(0);
+    cmd_query_data()
+    cmd_set_mode(0)
     cmd_set_sleep()
