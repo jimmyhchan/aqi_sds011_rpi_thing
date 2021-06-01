@@ -37,12 +37,12 @@ def dump(d: bytes, prefix: str = '') -> None:
 def construct_command(cmd: int, data: List[int] = []) -> bytes:
     assert len(data) <= 12
     data += [0, ]*(12-len(data))
-    checksum = (sum(data)+cmd-2) % 256
-    ret = "\xaa\xb4" + chr(cmd)
+    checksum: int = (sum(data)+cmd-2) % 256
+    ret: str = "\xaa\xb4" + chr(cmd)
     ret += ''.join(chr(x) for x in data)
     ret += "\xff\xff" + chr(checksum) + "\xab"
 
-    out = ret.encode('utf-8')
+    out: bytes = ret.encode('utf-8')
 
     if DEBUG:
         dump(out, '> ')
@@ -69,10 +69,10 @@ def process_version(d: bytes) -> None:
 
 def read_response() -> bytes:
     byte = b''
-    while byte != "\xaa":
+    while byte != b"\xaa":
         byte = ser.read(size=1)
 
-    d = ser.read(size=9)
+    d: bytes = ser.read(size=9)
 
     if DEBUG:
         dump(d, '< ')
